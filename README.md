@@ -65,7 +65,7 @@ Crie um arquivo .env na raiz:
 TZ=America/Sao_Paulo
 
 # Bitrix
-BITRIX_URL=https://bitrix24.com.br/
+BITRIX_URL=https://teste.com.br/
 BITRIX_USER="seu.email@empresa.com"
 BITRIX_PASS="sua_senha"
 HEADLESS=true

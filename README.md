@@ -2,34 +2,6 @@ Bitrix ➜ Google Calendar (via Selenium + Google API)
 
 Sincroniza eventos do Bitrix24 com o Google Calendar lendo notificações de agenda no Bitrix, extraindo os dados e criando/atualizando no GCal sem duplicar.
 
-Sumário
-
-Arquitetura
-
-Pré-requisitos
-
-Instalação
-
-Configuração (.env)
-
-Credenciais Google (OAuth)
-
-Estrutura de arquivos
-
-Execução
-
-Agendamento
-
-Como funciona a deduplicação
-
-Seletores do Bitrix
-
-Logs & Artefatos
-
-Solução de problemas
-
-Arquitetura
-
 bot.py (Selenium/Firefox)
 
 Faz login no Bitrix (perfil persistente do Firefox para evitar captcha).
@@ -93,15 +65,14 @@ Crie um arquivo .env na raiz:
 TZ=America/Sao_Paulo
 
 # Bitrix
-BITRIX_URL=https://senff.bitrix24.com.br/
+BITRIX_URL=https://bitrix24.com.br/
 BITRIX_USER="seu.email@empresa.com"
 BITRIX_PASS="sua_senha"
 HEADLESS=true
 
 # Google Calendar
 GOOGLE_CALENDAR_ID=primary
-# ou o ID do calendário (ex.: davi.almeida@iebtinnovation.com)
-
+# ou o ID do calendário (ex.: zedascouves@gmail.com)
 
 HEADLESS=false se quiser visualizar o navegador.
 
@@ -146,16 +117,16 @@ Schema de out/events.json:
 
 [
   {
-    "titulo": "Integração QA - Davi Almeida",
+    "titulo": "Teste",
     "id": "1608604",
     "data": "16/09/2025",
     "inicio": "09:30",
     "termino": "10:30",
-    "link": "https://senff.bitrix24.com.br/.../calendar/?EVENT_ID=1608604"
+    "link": "https://steste.com.br/.../calendar/?EVENT_ID=1608604"
   }
 ]
 
-Execução
+# # # Execução
 Scrapear do Bitrix
 python main.py --scrape
 

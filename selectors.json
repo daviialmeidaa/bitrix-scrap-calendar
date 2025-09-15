@@ -1,0 +1,22 @@
+{
+  "login": {
+    "url": "https://senff.bitrix24.com.br/",
+    "user": "#login",
+    "continue_btn": ".b24net-login-enter-form__continue-btn",
+    "pass": "input[type='password']",
+    "pass_continue_btn": ".b24net-password-enter-form__continue-btn",
+    "logged_probe": ""
+  },
+  "notifications": {
+    "icon": ".ui-icon-set.--o-notification",
+    "root": ".bx-im-content-notification__elements",
+    "item": ".bx-im-content-notification-item__container",
+    "link_selector": "a[href*=\"/calendar/?EVENT_ID=\"]"
+  },
+  "event_view": {
+    "slider_root": ".calendar-slider-workarea",
+    "time_text": ".calendar-slider-sidebar-head-title"
+  },
+  "timezone": "America/Sao_Paulo",
+  "iframe": ""
+}

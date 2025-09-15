@@ -1,0 +1,34 @@
+# Ambiente virtual
+.venv/
+__pycache__/
+
+# Configurações e credenciais
+.env
+credentials.json
+token.json
+
+# Saídas e arquivos gerados
+out/
+
+# Logs
+*.log
+
+# Arquivos do sistema operacional
+.DS_Store
+Thumbs.db
+
+# Arquivos específicos de IDEs
+.vscode/
+.idea/
+
+# Arquivos temporários do Python
+*.pyc
+*.pyo
+*.pyd
+
+# Arquivos de teste ou backup
+*.bak
+*.tmp
+
+# Crontab local
+crontab

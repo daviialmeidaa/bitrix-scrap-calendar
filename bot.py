@@ -1,21 +1,3 @@
-# bot.py
-# -*- coding: utf-8 -*-
-"""
-Raspa notificações do Bitrix e salva apenas eventos cujo card contém:
-"Você concordou em participar do evento".
-
-Para cada notificação filtrada:
-- Tenta abrir o slider do evento e extrair data/início/término.
-- Se o slider estiver bloqueando o clique ou falhar,
-  faz fallback: lê data e início direto do texto do card
-  (ex.: "Sexta-feira, 19 de setembro de 2025 10:30")
-  e define término = início + 60min.
-
-Saídas:
-- out/events.json (lista de dicts)
-- out/events.py   (módulo Python com EVENTS = [...])
-"""
-
 import os, json, time, traceback, re, unicodedata
 from datetime import datetime, timedelta
 
@@ -91,6 +73,8 @@ PT_MONTHS = {
     "janeiro":1, "fevereiro":2, "março":3, "marco":3, "abril":4, "maio":5, "junho":6,
     "julho":7, "agosto":8, "setembro":9, "outubro":10, "novembro":11, "dezembro":12
 }
+
+URL_RE = re.compile(r"https?://[^\s<>\"']+", re.I)
 
 # =========================
 # Selenium / Firefox
@@ -187,8 +171,7 @@ def parse_from_notification_text(txt: str):
     '... a ser realizado em Sexta-feira, 19 de setembro de 2025 10:30'
     Retorna (data_dd/mm/aaaa, inicio_HH:MM) ou ("","")
     """
-    t = _norm(txt)  # lower + sem acentos
-    # captura "dd de <mes> de 20xx HH:MM"
+    t = _norm(txt)
     m = re.search(r"\b(\d{1,2})\s+de\s+([a-z]+)\s+de\s+(20\d{2})\s+(\d{1,2}:\d{2})\b", t)
     if not m:
         return "", ""
@@ -199,11 +182,6 @@ def parse_from_notification_text(txt: str):
     return f"{d:02d}/{mes:02d}/{a}", hhmm
 
 def collect_calendar_notifications(driver, include_we=True):
-    """
-    Coleta <a> que contenham /calendar/?EVENT_ID=… e
-    FILTRA apenas as que contém a frase-alvo no texto do card.
-    Além de título/ID/URL, retorna 'full_text' (texto bruto do card).
-    """
     root_sel = sget("notifications", "root",  default=".bx-im-content-notification__elements")
     link_sel = sget("notifications", "link_selector", default='a[href*="/calendar/?EVENT_ID="]')
     item_sel = sget("notifications", "item", default=".bx-im-content-notification-item__container")
@@ -225,14 +203,12 @@ def collect_calendar_notifications(driver, include_we=True):
         if not m:
             continue
 
-        # texto completo do card
         try:
             card = a.find_element(By.XPATH, f'ancestor::*[contains(@class,"{item_cls}")]')
             full_text = card.text or ""
         except Exception:
             full_text = title
 
-        # aplica filtro pela frase-alvo
         if target_norm not in _norm(full_text):
             continue
 
@@ -243,18 +219,11 @@ def collect_calendar_notifications(driver, include_we=True):
     return results
 
 def parse_time_text(text: str):
-    """
-    Recebe, por ex: "amanhã, de 09:30 até 10:30" OU "Terça-feira, 16 de setembro de 2025 9:30"
-    Retorna: (data_dd/mm/aaaa, inicio_HH:MM, termino_HH:MM)
-    """
     t = " ".join(text.split()).lower()
-
-    # pega horas/minutos
     hhmm = re.findall(r"\b(\d{1,2}:\d{2})\b", t)
     inicio  = hhmm[0] if len(hhmm) >= 1 else ""
     termino = hhmm[1] if len(hhmm) >= 2 else ""
 
-    # explícito: "16 de setembro de 2025"
     m = re.search(r"\b(\d{1,2})\s+de\s+([a-zçãéêáíóúôû]+)\s+de\s+(20\d{2})\b", t)
     if m:
         d = int(m.group(1)); mes_nome = m.group(2); a = int(m.group(3))
@@ -262,7 +231,6 @@ def parse_time_text(text: str):
         if mes:
             return f"{d:02d}/{mes:02d}/{a}", inicio, termino
 
-    # relativo: hoje/amanhã/depois de amanhã
     base = NOW.date()
     if "depois de amanhã" in t:
         base = base + timedelta(days=2)
@@ -276,7 +244,6 @@ def parse_time_text(text: str):
     return base.strftime("%d/%m/%Y"), inicio, termino
 
 def close_slider_if_open(driver):
-    """Fecha o side-panel/slider do Bitrix se estiver aberto."""
     try:
         for sel in [".side-panel-close",
                     ".calendar-slider-header .ui-btn-close",
@@ -294,10 +261,39 @@ def close_slider_if_open(driver):
     except Exception:
         pass
 
+def _extract_detail_text(driver, desc_el):
+    """
+    Extrai texto visível do detalhe.
+    Prioriza URL detectada no texto; se não achar, tenta primeiro link filho (href).
+    Se nada, devolve texto cru (strip).
+    """
+    # innerText via JS preserva quebras e ignora elementos escondidos
+    try:
+        raw = (driver.execute_script("return arguments[0].innerText || '';", desc_el) or "").strip()
+    except Exception:
+        raw = (desc_el.text or "").strip()
+
+    # 1) Se o texto já contém uma URL, retorna a primeira
+    if raw:
+        m = URL_RE.search(raw)
+        if m:
+            return m.group(0).strip()
+
+    # 2) Se houver link filho, retorna o href
+    try:
+        a = desc_el.find_element(By.CSS_SELECTOR, "a[href]")
+        href = (a.get_attribute("href") or "").strip()
+        if href:
+            return href
+    except Exception:
+        pass
+
+    # 3) Sem URL: retorna o texto (limpo de espaços múltiplos)
+    return " ".join(raw.split())
+
 def click_and_extract_details(driver, wait, link_element):
     """
-    Abre o slider do evento, lê data/horário e fecha o slider ao final.
-    Usa JS click como fallback e fecha sliders pendurados antes de clicar.
+    Abre o slider do evento, lê data/horário e descrição, fecha o slider ao final.
     """
     close_slider_if_open(driver)
 
@@ -315,9 +311,32 @@ def click_and_extract_details(driver, wait, link_element):
     time_text = time_el.text.strip()
     log(f"Detalhe do evento (texto horário): {time_text}")
 
+    # ===== CAPTURA ROBUSTA DA DESCRIÇÃO =====
+    descricao = ""
+    desc_selectors = [
+        sget("event_view", "desc", default=""),
+        "#calendar-slider-detail-description",
+        ".calendar-slider-detail-description",
+        "[id*='slider'][id*='detail'][id*='description']",
+        "[class*='slider'][class*='detail'][class*='description']",
+    ]
+    desc_selectors = [s for s in desc_selectors if s]  # remove vazios
+
+    for css in desc_selectors:
+        try:
+            # espera curto; alguns eventos não têm descrição
+            desc_el = WebDriverWait(driver, 3).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, css))
+            )
+            descricao = _extract_detail_text(driver, desc_el)
+            if descricao:
+                break
+        except Exception:
+            continue
+
     data, inicio, termino = parse_time_text(time_text)
     close_slider_if_open(driver)
-    return {"data": data, "inicio": inicio, "termino": termino}
+    return {"data": data, "inicio": inicio, "termino": termino, "descricao": descricao}
 
 # =========================
 # Persistência
@@ -342,7 +361,7 @@ def merge_events(existing, new_items):
         k = str(n.get("id"))
         if k in by_id:
             cur = by_id[k]
-            for key in ["titulo","link","data","inicio","termino"]:
+            for key in ["titulo","link","data","inicio","termino","descricao"]:
                 val = n.get(key)
                 if val:
                     cur[key] = val
@@ -404,7 +423,6 @@ def main():
         for idx, n in enumerate(notif, 1):
             log(f"Extraindo detalhes do evento {idx}/{len(notif)} (ID={n['id']})…")
 
-            # Fallback inicial pelo texto do card
             fb_data, fb_inicio = parse_from_notification_text(n.get("full_text",""))
             fb_termino = _add_minutes(fb_inicio, 60) if fb_inicio else ""
 
@@ -414,9 +432,10 @@ def main():
             except Exception as e:
                 log_warn(f"Não foi possível ler slider do evento ID={n['id']}: {e}")
 
-            data    = details.get("data")    or fb_data    or ""
-            inicio  = details.get("inicio")  or fb_inicio  or ""
-            termino = details.get("termino") or (fb_termino if fb_inicio and not details.get("termino") else "")
+            data      = details.get("data")      or fb_data    or ""
+            inicio    = details.get("inicio")    or fb_inicio  or ""
+            termino   = details.get("termino")   or (fb_termino if fb_inicio and not details.get("termino") else "")
+            descricao = details.get("descricao") or ""
 
             enriched.append({
                 "titulo": n["title"],
@@ -425,6 +444,7 @@ def main():
                 "data": data,
                 "inicio": inicio,
                 "termino": termino,
+                "descricao": descricao,
             })
 
         merged = merge_events(existing, enriched)

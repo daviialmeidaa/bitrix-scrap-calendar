@@ -1,5 +1,5 @@
 # sync_gcal.py
-import os, json
+import os, json, re
 from datetime import datetime
 from dateutil import tz
 from dotenv import load_dotenv
@@ -21,6 +21,8 @@ def log(m): print(f"[SYNC] {m}", flush=True)
 def ok(m):  print(f"[OK]  {m}", flush=True)
 def warn(m):print(f"[!]  {m}", flush=True)
 def err(m): print(f"[ERR] {m}", flush=True)
+
+URL_RE = re.compile(r"https?://[^\s<>\"']+", re.I)
 
 # ========= Auth =========
 def get_service():
@@ -48,12 +50,13 @@ def to_rfc3339(date_br: str, time_hm: str, tz_name: str) -> str:
     return datetime(y, m, d, hh, mm, tzinfo=tz.gettz(tz_name)).isoformat()
 
 def build_body(ev):
-    titulo  = ev["titulo"].strip()
-    bitrix  = str(ev["id"]).strip()
-    data    = ev["data"].strip()
-    inicio  = ev["inicio"].strip()
-    termino = ev["termino"].strip()
-    link    = ev.get("link", "").strip()
+    titulo   = ev["titulo"].strip()
+    bitrix   = str(ev["id"]).strip()
+    data     = ev["data"].strip()
+    inicio   = ev["inicio"].strip()
+    termino  = ev["termino"].strip()
+    link     = ev.get("link", "").strip()
+    detalhe  = (ev.get("descricao") or "").strip()
 
     body = {
         "summary": titulo,
@@ -61,11 +64,24 @@ def build_body(ev):
         "end":   {"dateTime": to_rfc3339(data, termino, TZ_NAME), "timeZone": TZ_NAME},
         "extendedProperties": {"private": {"bitrix_id": bitrix}}
     }
-    desc = [f"Fonte: Bitrix", f"ID: {bitrix}"]
+
+    # Descrição do evento (sempre inclui fonte/ID; anexa detalhe se houver)
+    desc_lines = [f"Fonte: Bitrix", f"ID: {bitrix}"]
     if link:
-        desc.append(link)
+        desc_lines.append(link)
         body["source"] = {"title": "Bitrix", "url": link}
-    body["description"] = "\n".join(desc)
+
+    if detalhe:
+        m = URL_RE.search(detalhe)
+        if m:
+            detalhe_url = m.group(0).strip()
+            desc_lines.append(f"Detalhe: {detalhe_url}")
+            # Usar também como localização para facilitar o join direto por app
+            body["location"] = detalhe_url
+        else:
+            desc_lines.append(f"Detalhe: {detalhe}")
+
+    body["description"] = "\n".join(desc_lines)
     return body
 
 def find_existing_by_bitrix_id(svc, cal_id, bitrix_id: str):

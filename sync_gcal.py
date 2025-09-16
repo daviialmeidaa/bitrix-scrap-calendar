@@ -1,4 +1,5 @@
-import os, json, re
+# sync_gcal.py
+import os, json
 from datetime import datetime
 from dateutil import tz
 from dotenv import load_dotenv
@@ -60,38 +61,20 @@ def build_body(ev):
         "end":   {"dateTime": to_rfc3339(data, termino, TZ_NAME), "timeZone": TZ_NAME},
         "extendedProperties": {"private": {"bitrix_id": bitrix}}
     }
-    desc_lines = [f"Fonte: Bitrix", f"ID: {bitrix}"]
+    desc = [f"Fonte: Bitrix", f"ID: {bitrix}"]
     if link:
-        desc_lines.append(link)
+        desc.append(link)
         body["source"] = {"title": "Bitrix", "url": link}
-    body["description"] = "\n".join(desc_lines)
+    body["description"] = "\n".join(desc)
     return body
 
-def equal_event(existing: dict, desired: dict) -> bool:
-    def pick(e):
-        return {
-            "summary": e.get("summary"),
-            "start": e.get("start", {}).get("dateTime"),
-            "end":   e.get("end", {}).get("dateTime"),
-            "description": e.get("description"),
-        }
-    return pick(existing) == pick({
-        "summary": desired["summary"],
-        "start": {"dateTime": desired["start"]["dateTime"]},
-        "end":   {"dateTime": desired["end"]["dateTime"]},
-        "description": desired.get("description")
-    })
-
 def find_existing_by_bitrix_id(svc, cal_id, bitrix_id: str):
-    # Filtra por propriedade privada — retorna 0..N; usamos o primeiro
-    time_min = "1970-01-01T00:00:00Z"
-    time_max = "2100-01-01T00:00:00Z"
     resp = svc.events().list(
         calendarId=cal_id,
         privateExtendedProperty=f"bitrix_id={bitrix_id}",
         singleEvents=True,
-        timeMin=time_min,
-        timeMax=time_max,
+        timeMin="1970-01-01T00:00:00Z",
+        timeMax="2100-01-01T00:00:00Z",
         maxResults=2500
     ).execute()
     items = resp.get("items", [])
@@ -110,47 +93,29 @@ def main():
         return
 
     svc = get_service()
-    created = updated = skipped = 0
+    created = skipped = 0
 
     for ev in events:
-        # valida mínimos
         if not all(ev.get(k) for k in ("titulo","id","data","inicio","termino")):
             warn(f"Incompleto, pulando: {ev}")
             continue
 
         bitrix_id = str(ev["id"]).strip()
-        body = build_body(ev)
-
         try:
             existing = find_existing_by_bitrix_id(svc, CAL_ID, bitrix_id)
             if existing:
-                if equal_event(existing, body):
-                    log(f"Igual (skip): {ev['titulo']} (bitrix_id={bitrix_id})")
-                    skipped += 1
-                else:
-                    # preserva propriedades do existente e atualiza campos principais
-                    updated_body = existing
-                    updated_body.update({
-                        "summary": body["summary"],
-                        "description": body["description"],
-                        "start": body["start"],
-                        "end": body["end"],
-                        "extendedProperties": body["extendedProperties"],
-                    })
-                    # preserve source se houver link
-                    if body.get("source"):
-                        updated_body["source"] = body["source"]
-                    svc.events().update(calendarId=CAL_ID, eventId=existing["id"], body=updated_body).execute()
-                    ok(f"Atualizado: {ev['titulo']} ({ev['data']} {ev['inicio']}-{ev['termino']})")
-                    updated += 1
-            else:
-                svc.events().insert(calendarId=CAL_ID, body=body, supportsAttachments=False).execute()
-                ok(f"Criado: {ev['titulo']} ({ev['data']} {ev['inicio']}-{ev['termino']})")
-                created += 1
+                log(f"Já existe (skip): {ev['titulo']} (bitrix_id={bitrix_id})")
+                skipped += 1
+                continue
+
+            body = build_body(ev)
+            svc.events().insert(calendarId=CAL_ID, body=body, supportsAttachments=False).execute()
+            ok(f"Criado: {ev['titulo']} ({ev['data']} {ev['inicio']}-{ev['termino']})")
+            created += 1
         except HttpError as e:
             err(f"Falha ao sincronizar '{ev.get('titulo','')}' (bitrix_id={bitrix_id}): {e}")
 
-    log(f"Resumo → criados={created}, atualizados={updated}, pulados={skipped}")
+    log(f"Resumo → criados={created}, pulados={skipped}")
 
 if __name__ == "__main__":
     main()

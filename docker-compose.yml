@@ -1,0 +1,16 @@
+services:
+  bitrix2gcal:
+    build: .
+    container_name: bitrix2gcal
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      HEADLESS: "true"
+      TZ: ${TZ:-America/Sao_Paulo}
+      GOOGLE_CALENDAR_ID: ${GOOGLE_CALENDAR_ID:-primary}
+      FF_PROFILE_DIR: /app/out/ff-profile-docker
+    volumes:
+      - ./out:/app/out
+      - ./selectors.json:/app/selectors.json:ro
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json

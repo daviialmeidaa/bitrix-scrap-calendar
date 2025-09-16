@@ -1,0 +1,11 @@
+out/
+**/ff-profile*/
+.venv/
+.env
+__pycache__/
+*.pyc
+*.log
+token.json
+credentials.json
+.vscode/
+.idea/

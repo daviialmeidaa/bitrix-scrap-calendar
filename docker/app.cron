@@ -1,0 +1,6 @@
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+CRON_TZ=America/Sao_Paulo
+
+*/15 8-17 * * 1-5 python -u /app/main.py --all
+0 18 * * 1-5 python -u /app/main.py --all
